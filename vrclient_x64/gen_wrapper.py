@@ -289,9 +289,7 @@ def ivrclientcore_is_hmd_present(cppname, method):
     return "ivrclientcore_is_hmd_present"
 
 def ivrclientcore_init(cppname, method):
-    if "002" in cppname:
-        return "ivrclientcore_002_init"
-    return "ivrclientcore_init"
+    return "ivrclientcore_002_init" if "002" in cppname else "ivrclientcore_init"
 
 def ivrclientcore_get_generic_interface(cppname, method):
     return "ivrclientcore_get_generic_interface"
@@ -332,10 +330,24 @@ def ivrcompositor_post_present_handoff(cppname, method):
     return "ivrcompositor_post_present_handoff"
 
 def ivrcompositor_wait_get_poses(cppname, method):
-    for version in ["016", "017", "018", "019", "020", "021", "022", "024", "026"]:
-        if version in cppname:
-            return "ivrcompositor_wait_get_poses"
-    return None
+    return next(
+        (
+            "ivrcompositor_wait_get_poses"
+            for version in [
+                "016",
+                "017",
+                "018",
+                "019",
+                "020",
+                "021",
+                "022",
+                "024",
+                "026",
+            ]
+            if version in cppname
+        ),
+        None,
+    )
 
 def ivrcompositor_get_vulkan_device_extensions_required(cppname, method):
     return "ivrcompositor_get_vulkan_device_extensions_required"
@@ -383,9 +395,7 @@ def ivroverlay_set_overlay_texture(cppname, method):
     return "ivroverlay_set_overlay_texture"
 
 def ivrinput_get_digital_action_data(cppname, method):
-    if "003" in cppname:
-        return None
-    return "ivrinput_get_digital_action_data"
+    return None if "003" in cppname else "ivrinput_get_digital_action_data"
 
 method_overrides = [
     ("IVRClientCore", "BIsHmdPresent", ivrclientcore_is_hmd_present),
