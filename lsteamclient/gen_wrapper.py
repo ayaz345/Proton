@@ -258,7 +258,7 @@ def method_needs_manual_handling(interface_with_version, method_name):
     return method and method.version_func(version)
 
 def post_execution_function(classname, method_name):
-    return post_execution_functions.get(classname + "_" + method_name)
+    return post_execution_functions.get(f"{classname}_{method_name}")
 
 # manual converters for simple types (function pointers)
 manual_type_converters = [
@@ -623,8 +623,8 @@ def struct_needs_conversion_nocache(struct):
     #check 32-bit compat
     windows_struct = find_windows_struct(struct)
     if windows_struct is None:
-        print("Couldn't find windows struct for " + struct.spelling)
-    assert(not windows_struct is None) #must find windows_struct
+        print(f"Couldn't find windows struct for {struct.spelling}")
+    assert windows_struct is not None
     for field in struct.get_fields():
         if struct.get_offset(field.spelling) != windows_struct.get_offset(field.spelling):
             return True
@@ -634,9 +634,9 @@ def struct_needs_conversion_nocache(struct):
 
     #check 64-bit compat
     windows_struct = find_windows64_struct(struct)
-    assert(not windows_struct is None) #must find windows_struct
+    assert windows_struct is not None
     lin64_struct = find_linux64_struct(struct)
-    assert(not lin64_struct is None) #must find lin64_struct
+    assert lin64_struct is not None
     for field in lin64_struct.get_fields():
         if lin64_struct.get_offset(field.spelling) != windows_struct.get_offset(field.spelling):
             return True
@@ -644,16 +644,12 @@ def struct_needs_conversion_nocache(struct):
                 struct_needs_conversion(field.type):
             return True
 
-    #check if any members need path conversion
-    path_conv = get_path_converter(struct)
-    if path_conv:
-        return True
-    return False
+    return bool(path_conv := get_path_converter(struct))
 
 def struct_needs_conversion(struct):
-    if not sdkver in struct_conversion_cache:
+    if sdkver not in struct_conversion_cache:
         struct_conversion_cache[sdkver] = {}
-    if not strip_const(struct.spelling) in struct_conversion_cache[sdkver]:
+    if strip_const(struct.spelling) not in struct_conversion_cache[sdkver]:
         struct_conversion_cache[sdkver][strip_const(struct.spelling)] = struct_needs_conversion_nocache(struct)
     return struct_conversion_cache[sdkver][strip_const(struct.spelling)]
 
@@ -683,9 +679,7 @@ class DummyWriter(object):
         pass
 
 def to_c_bool(b):
-    if b:
-        return "1"
-    return "0"
+    return "1" if b else "0"
 
 dummy_writer = DummyWriter()
 
@@ -701,16 +695,13 @@ def handle_method(cfile, classname, winclassname, cppname, method, cpp, cpp_h, e
     else:
         existing_methods.append(used_name)
     returns_record = method.result_type.get_canonical().kind == TypeKind.RECORD
-    if returns_record:
-        parambytes = 8 #_this + return pointer
-    else:
-        parambytes = 4 #_this
-    for param in list(method.get_children()):
-        if param.kind == CursorKind.PARM_DECL:
-            if param.type.kind == TypeKind.LVALUEREFERENCE:
-                parambytes += 4
-            else:
-                parambytes += int(math.ceil(param.type.get_size()/4.0) * 4)
+    parambytes = (8 if returns_record else 4) + sum(
+        4
+        if param.type.kind == TypeKind.LVALUEREFERENCE
+        else int(math.ceil(param.type.get_size() / 4.0) * 4)
+        for param in list(method.get_children())
+        if param.kind == CursorKind.PARM_DECL
+    )
     if method_needs_manual_handling(cppname, used_name):
         cpp = dummy_writer #just don't write the cpp function
     cfile.write(f"DEFINE_THISCALL_WRAPPER({winclassname}_{used_name}, {parambytes})\n")
@@ -737,8 +728,11 @@ def handle_method(cfile, classname, winclassname, cppname, method, cpp, cpp_h, e
     manual_convert = []
     for param in list(method.get_children()):
         if param.kind == CursorKind.PARM_DECL:
-            if param.type.kind == TypeKind.POINTER and \
-                (param.type.get_pointee().kind == TypeKind.UNEXPOSED or param.type.get_pointee().kind == TypeKind.FUNCTIONPROTO):
+            if (
+                param.type.kind == TypeKind.POINTER
+                and param.type.get_pointee().kind
+                in [TypeKind.UNEXPOSED, TypeKind.FUNCTIONPROTO]
+            ):
                 #unspecified function pointer
                 typename = "void *"
             else:
@@ -748,9 +742,11 @@ def handle_method(cfile, classname, winclassname, cppname, method, cpp, cpp_h, e
             while real_type.kind == TypeKind.POINTER:
                 real_type = real_type.get_pointee()
             win_name = typename
-            if real_type.kind == TypeKind.RECORD and \
-                    not real_type.spelling in wrapped_classes and \
-                    struct_needs_conversion(real_type):
+            if (
+                real_type.kind == TypeKind.RECORD
+                and real_type.spelling not in wrapped_classes
+                and struct_needs_conversion(real_type)
+            ):
                 need_convert.append(param)
                 #preserve pointers
                 win_name = typename.replace(real_type.spelling, f"win{real_type.spelling}_{sdkver}")
@@ -780,8 +776,6 @@ def handle_method(cfile, classname, winclassname, cppname, method, cpp, cpp_h, e
         for i in range(len(path_conv["w2l_names"])):
             if path_conv["w2l_arrays"][i]:
                 cfile.write(f"    const char **lin_{path_conv['w2l_names'][i]} = steamclient_dos_to_unix_stringlist({path_conv['w2l_names'][i]});\n")
-                # TODO
-                pass
             else:
                 cfile.write(f"    char lin_{path_conv['w2l_names'][i]}[PATH_MAX];\n")
                 cfile.write(f"    steamclient_dos_path_to_unix_path({path_conv['w2l_names'][i]}, lin_{path_conv['w2l_names'][i]}, {to_c_bool(path_conv['w2l_urls'][i])});\n")
@@ -832,7 +826,7 @@ def handle_method(cfile, classname, winclassname, cppname, method, cpp, cpp_h, e
 
     post_exec = post_execution_function(classname, method.spelling)
     if post_exec != None:
-        cpp.write(post_exec + '(');
+        cpp.write(f'{post_exec}(');
 
     should_do_cb_wrap = "GetAPICallResult" in used_name
     should_gen_wrapper = cpp != dummy_writer and \
@@ -900,15 +894,14 @@ def handle_method(cfile, classname, winclassname, cppname, method, cpp, cpp_h, e
     cfile.write("}\n\n")
     for param in need_convert:
         if param.type.kind == TypeKind.POINTER:
-            if not "const " in param.type.spelling: #don't modify const arguments
+            if "const " not in param.type.spelling: #don't modify const arguments
                 real_type = param.type
                 while real_type.kind == TypeKind.POINTER:
                     real_type = real_type.get_pointee()
                 cpp.write(f"    lin_to_win_struct_{real_type.spelling}_{sdkver}(&lin_{param.spelling}, {param.spelling});\n")
         else:
             cpp.write(f"    lin_to_win_struct_{param.type.spelling}_{sdkver}(&lin_{param.spelling}, &{param.spelling});\n")
-    if method.result_type.kind != TypeKind.VOID and \
-            len(need_convert) > 0:
+    if method.result_type.kind != TypeKind.VOID and need_convert:
         cpp.write("    return retval;\n")
     cpp.write("}\n\n")
 
@@ -925,14 +918,14 @@ def get_iface_version(classname):
             ver = "UNVERSIONED"
     if classname in class_versions.keys() and ver in class_versions[classname]:
         return (ver, True)
-    if not classname in class_versions.keys():
+    if classname not in class_versions.keys():
         class_versions[classname] = []
     class_versions[classname].append(ver)
     return (ver, False)
 
 def handle_class(sdkver, classnode, file):
     children = list(classnode.get_children())
-    if len(children) == 0:
+    if not children:
         return
     (iface_version, already_generated) = get_iface_version(classnode.spelling)
     if already_generated:
@@ -970,7 +963,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(steamclient);
     cpp.write(f"#include \"steamworks_sdk_{sdkver}/steam_api.h\"\n")
     if os.path.isfile(f"steamworks_sdk_{sdkver}/steamnetworkingtypes.h"):
         cpp.write(f"#include \"steamworks_sdk_{sdkver}/steamnetworkingtypes.h\"\n")
-    if not file == "steam_api.h":
+    if file != "steam_api.h":
         cpp.write(f"#include \"steamworks_sdk_{sdkver}/{file}\"\n")
     cpp.write("#pragma pop_macro(\"__cdecl\")\n")
     cpp.write("#include \"steamclient_private.h\"\n")
@@ -1042,7 +1035,7 @@ def get_field_attribute_str(field):
         align = field.type.get_align()
     else:
         align = win_struct.get_align()
-    return " __attribute__((aligned(" + str(align) + ")))"
+    return f" __attribute__((aligned({str(align)})))"
 
 #because of struct packing differences between win32 and linux, we
 #need to convert these structs from their linux layout to the win32

@@ -51,7 +51,7 @@ from fontTools import subset
 from fontTools.ttLib.tables import otTables
 
 def read_line_metrics(font):
-    metrics = {
+    return {
         "ascent": font["hhea"].ascent,
         "descent": font["hhea"].descent,
         "usWinAscent": font["OS/2"].usWinAscent,
@@ -62,7 +62,6 @@ def read_line_metrics(font):
         "sCapHeight": font["OS/2"].sCapHeight,
         "sTypoLineGap": font["OS/2"].sTypoLineGap,
     }
-    return metrics
 
 
 def set_line_metrics(font, metrics):
@@ -223,7 +222,7 @@ def add_gsub_to_font(fontfile):
 
     font["GSUB"] = gsub_table
 
-    target_file = tempfile.gettempdir() + "/" + os.path.basename(fontfile)
+    target_file = f"{tempfile.gettempdir()}/{os.path.basename(fontfile)}"
     font.save(target_file)
     return target_file
 
@@ -271,7 +270,7 @@ def main():
     with open(ranges_filename) as ranges:
         for line in ranges:
             unicodes.extend(parse_unicodes(line.split("#")[0]))
-    if len(unicodes) != 0:
+    if unicodes:
         subsetter.populate(unicodes=unicodes)
         subsetter.subset(font)
 
@@ -280,9 +279,9 @@ def main():
         if record.nameID == 1:
             record.string = font_name
         elif record.nameID == 4:
-            record.string = "{} {}".format(font_name, weight)
+            record.string = f"{font_name} {weight}"
         elif record.nameID == 6:
-            record.string = "{}-{}".format(ps_name, weight.replace(' ', ''))
+            record.string = f"{ps_name}-{weight.replace(' ', '')}"
 
     font.save(output_filename)
 

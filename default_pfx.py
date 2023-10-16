@@ -38,9 +38,7 @@ def dll_bitness(path):
         magic = sfile.read(2)
         if magic == bytes((11, 1)):
             return 32
-        if magic == bytes((11, 2)):
-            return 64
-        return 0
+        return 64 if magic == bytes((11, 2)) else 0
     except IOError:
         return 0
 
@@ -89,7 +87,7 @@ def filter_registry(filename):
 
     filtering = False
     with open(filename) as fin:
-        with open(filename + '.tmp', 'w') as fout:
+        with open(f'{filename}.tmp', 'w') as fout:
             for line in fin:
                 line = line.strip()
 
@@ -107,7 +105,7 @@ def filter_registry(filename):
 
                 fout.write(line + '\n')
 
-    os.rename(filename + '.tmp', filename)
+    os.rename(f'{filename}.tmp', filename)
 
 #steampipe can't handle filenames with colons, so we remove them here
 #and restore them in the proton script
@@ -120,7 +118,7 @@ def fixup_drive_links(default_pfx_dir):
 def make_default_pfx(default_pfx_dir, dist_dir):
     local_env = dict(os.environ)
 
-    ld_path = dist_dir + "/lib64:" + dist_dir + "/lib"
+    ld_path = f"{dist_dir}/lib64:{dist_dir}/lib"
 
     local_env["LD_LIBRARY_PATH"] = ld_path
     local_env["WINEPREFIX"] = default_pfx_dir
